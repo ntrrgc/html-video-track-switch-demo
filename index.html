@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HTML video track switch demo</title>
+    <style>
+        #grpAudioTracks label, #grpVideoTracks label {
+            display: block;
+        }
+        #divWarningNoVideoChange {
+            background: yellow;
+        }
+    </style>
+</head>
+<body>
+<form id="topBar">
+    <label>
+        Media file:
+        <select id="selMediaFile">
+            <option value="media-1video-1audio.mp4">MP4 1 video + 1 audio</option>
+            <option value="media-1video-2audio.mp4">MP4 1 video + 2 audio</option>
+            <option value="media-2audio.mp4">MP4 2 audio</option>
+            <option value="media-2video.mp4">MP4 2 video</option>
+            <option value="media-2video-2audio.mp4" selected>MP4 2 video + 2 audio</option>
+            <option value="media-1video-1audio.webm">WebM 1 video + 1 audio</option>
+            <option value="media-2video-2audio.webm">WebM 2 video + 2 audio</option>
+        </select>
+    </label>
+    <button id="btnLoad" type="submit">Load</button>
+</form>
+
+<video controls id="mediaElement"></video>
+
+<form id="trackControls">
+    <div>Audio tracks:</div>
+    <div id="grpAudioTracks"></div>
+
+    <div>Video tracks:</div>
+    <div id="grpVideoTracks"></div>
+
+    <div id="divWarningNoVideoChange" style="display: none;">
+        This browser does not seem to react to video track switch (as of writing, no browser supports this).
+    </div>
+</form>
+
+<script>
+    mediaElement.audioTracks.onaddtrack = function audioTrackAdded(ev) {
+        recreateAudioTrackCheckboxes();
+    };
+
+    mediaElement.videoTracks.onaddtrack = function videoTrackAdded(ev) {
+        recreateVideoTrackRadios();
+    };
+
+    function recreateAudioTrackCheckboxes() {
+        while (grpAudioTracks.lastChild)
+            grpAudioTracks.lastChild.remove();
+
+        for (let track of mediaElement.audioTracks) {
+            const lblTrack = document.createElement("label");
+            lblTrack.id = `audio-track-${track.id}`;
+            const chkTrack = document.createElement("input");
+            chkTrack.setAttribute("type", "checkbox");
+            chkTrack.setAttribute("name", `audio-track-${track.id}`);
+            chkTrack.checked = track.enabled;
+            chkTrack.onchange = function chkAudioTrackChanged() {
+                track.enabled = this.checked;
+            };
+            lblTrack.appendChild(chkTrack);
+            const span = document.createElement("span");
+            span.innerText = `Audio: id=${track.id}, language=${track.language}, kind=${track.kind}`;
+            lblTrack.appendChild(span);
+            grpAudioTracks.appendChild(lblTrack);
+        }
+    }
+
+    function recreateVideoTrackRadios() {
+        const trackOptions = [
+            {value: -1, text: "No video"},
+        ];
+        for (let i = 0; i < mediaElement.videoTracks.length; i++) {
+            const track = mediaElement.videoTracks[i];
+            trackOptions.push({value: i, text: `Video: id=${track.id}, language=${track.language}, kind=${track.kind}`});
+        }
+
+        // Wipe existing buttons
+        while (grpVideoTracks.lastChild)
+            grpVideoTracks.lastChild.remove();
+
+        for (let option of trackOptions) {
+            const lblTrack = document.createElement("label");
+            const radTrack = document.createElement("input");
+            radTrack.setAttribute("type", "radio");
+            radTrack.setAttribute("name", "videoSelectedIndex");
+            radTrack.value = option.value;
+            radTrack.onchange = updateSelectedVideoTrack;
+            radTrack.checked = (option.value == mediaElement.videoTracks.selectedIndex);
+            lblTrack.appendChild(radTrack);
+            const span = document.createElement("span");
+            span.innerText = option.text;
+            lblTrack.appendChild(span);
+            grpVideoTracks.appendChild(lblTrack);
+        }
+    }
+
+    function updateSelectedVideoTrack() {
+        const currentIndex = mediaElement.videoTracks.selectedIndex;
+        const requestedIndex = parseInt(trackControls.videoSelectedIndex.value);
+        if (currentIndex != requestedIndex) {
+            console.log(`Requested changing videoTracks.selectedIndex from ${currentIndex} to ${requestedIndex}.`);
+            mediaElement.videoTracks.selectedIndex = requestedIndex;
+            if (mediaElement.videoTracks.selectedIndex != requestedIndex)
+                divWarningNoVideoChange.style.display = "block";
+        }
+    }
+
+    topBar.onsubmit = function loadMedia(event) {
+        event.preventDefault();
+
+        // Clear existing track inputs.
+        while (grpAudioTracks.lastChild)
+            grpAudioTracks.lastChild.remove();
+        while (grpVideoTracks.lastChild)
+            grpVideoTracks.lastChild.remove();
+
+        mediaElement.src = "assets/" + selMediaFile.value;
+    };
+</script>
+</body>
+</html>
