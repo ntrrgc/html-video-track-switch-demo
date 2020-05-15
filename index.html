@@ -4,11 +4,15 @@
     <meta charset="UTF-8">
     <title>HTML video track switch demo</title>
     <style>
-        #grpAudioTracks label, #grpVideoTracks label {
+        #grpAudioTracks label, #grpVideoTracks label, #grpTextTracks label {
             display: block;
         }
         #divWarningNoVideoChange {
             background: yellow;
+        }
+        #transplant-place {
+            position: absolute;
+            right: 0;
         }
     </style>
 </head>
@@ -21,15 +25,28 @@
             <option value="media-1video-2audio.mp4">MP4 1 video + 2 audio</option>
             <option value="media-2audio.mp4">MP4 2 audio</option>
             <option value="media-2video.mp4">MP4 2 video</option>
-            <option value="media-2video-2audio.mp4" selected>MP4 2 video + 2 audio</option>
+            <option value="media-2video-2audio.mp4">MP4 2 video + 2 audio</option>
+            <option value="media-2video-2audio-2text.mp4" selected>MP4 2 video + 2 audio + 2 text</option>
             <option value="media-1video-1audio.webm">WebM 1 video + 1 audio</option>
             <option value="media-2video-2audio.webm">WebM 2 video + 2 audio</option>
+            <option value="media-2video-2audio-2text.webm">WebM 2 video + 2 audio + 2 text</option>
+            <option value="mse:video-main.mp4+audio-en.mp4">MSE (MP4 1 video) + (MP4 1 audio)</option>
+            <option value="mse:video-main.mp4+audio-en.mp4+audio-es.mp4">MSE (MP4 1 video) + (MP4 1 audio) + (MP4 1 audio)</option>
+            <option value="mse:video-main.mp4+audio-en-es.mp4">MSE (MP4 1 video) + (MP4 2 audio)</option>
+            <option value="mse:video-main-audio-en.mp4">MSE (MP4 1 video + 1 audio)</option>
+            <option value="mse:video-main.mp4+audio-en.mp4+text-en.mp4">MSE (MP4 1 video) + (MP4 1 audio) + (MP4 1 text)</option>
+            <option value="mse:video-main-audio-en-text-en.mp4">MSE (MP4 1 video + 1 audio + 1 text)</option>
         </select>
     </label>
     <button id="btnLoad" type="submit">Load</button>
+    <button id="btnTransplant" type="button">Transplant</button>
+    <button id="btnTearDown" type="button">Tear down</button>
 </form>
 
-<video controls id="mediaElement"></video>
+<video controls id="mediaElement">
+<!--    <track label="English" kind="subtitles" srclang="en" src="assets/en.vtt">-->
+<!--    <track label="Español" kind="subtitles" srclang="es" src="assets/es.vtt">-->
+</video>
 
 <form id="trackControls">
     <div>Audio tracks:</div>
@@ -38,18 +55,59 @@
     <div>Video tracks:</div>
     <div id="grpVideoTracks"></div>
 
+    <div>Text tracks:</div>
+    <div id="grpTextTracks"></div>
+
     <div id="divWarningNoVideoChange" style="display: none;">
         This browser does not seem to react to video track switch (as of writing, no browser supports this).
     </div>
 </form>
 
+<div id="transplant-place"></div>
+
 <script>
+    const mediaElement = document.getElementById("mediaElement");
+
+    function findMP4InitializationSegmentBoundary(bytes) {
+        const view = new DataView(bytes);
+        let boxPosition = 0;
+        while (true) {
+            const size = view.getUint32(boxPosition);
+            const type = view.getUint32(boxPosition + 4);
+            if (type == 0x6d646174) // mdat
+                return boxPosition;
+
+            boxPosition += size;
+        }
+    }
+
+    function parseMSEString(string) {
+        if (string.indexOf("mse:") != 0)
+            return null;
+
+        return string.slice(4).split('+');
+    }
+
     mediaElement.audioTracks.onaddtrack = function audioTrackAdded(ev) {
         recreateAudioTrackCheckboxes();
     };
 
     mediaElement.videoTracks.onaddtrack = function videoTrackAdded(ev) {
+        console.log(`videoTrackAdded. selectedIndex = ${mediaElement.videoTracks.selectedIndex}`);
         recreateVideoTrackRadios();
+    };
+
+    mediaElement.textTracks.onaddtrack = mediaElement.textTracks.onremovetrack = function textTracksUpdated() {
+       recreateTextTrackRadios();
+    };
+    recreateTextTrackRadios();
+
+    mediaElement.audioTracks.onremovetrack = function audioTrackRemoved(ev) {
+        console.log(`audioTrackRemoved: ${ev}`);
+    };
+
+    mediaElement.videoTracks.onremovetrack = function videoTrackRemoved(ev) {
+        console.log(`videoTrackRemoved: ${ev}`);
     };
 
     function recreateAudioTrackCheckboxes() {
@@ -103,6 +161,39 @@
         }
     }
 
+    function recreateTextTrackRadios() {
+        const trackOptions = [
+            {value: -1, text: "No text"},
+        ];
+        for (let i = 0; i < mediaElement.textTracks.length; i++) {
+            const track = mediaElement.textTracks[i];
+            trackOptions.push({value: i, text: `Text: id=${track.id}, language=${track.language}, label=${track.label}`});
+        }
+
+        // Wipe existing buttons
+        while (grpTextTracks.lastChild)
+            grpTextTracks.lastChild.remove();
+
+        for (let i = 0; i < mediaElement.textTracks.length; i++) {
+            const track = mediaElement.textTracks[i];
+
+            const lblTrack = document.createElement("label");
+            lblTrack.id = `text-track-${track.id}`;
+            const chkTrack = document.createElement("input");
+            chkTrack.setAttribute("type", "checkbox");
+            chkTrack.setAttribute("name", `text-track-${track.id}`);
+            chkTrack.checked = track.mode == "showing";
+            chkTrack.onchange = function chkAudioTrackChanged() {
+                track.mode = this.checked ? "showing" : "hidden";
+            };
+            lblTrack.appendChild(chkTrack);
+            const span = document.createElement("span");
+            span.innerText = `Text: id=${track.id}, language=${track.language}, label=${track.label}`;
+            lblTrack.appendChild(span);
+            grpTextTracks.appendChild(lblTrack);
+        }
+    }
+
     function updateSelectedVideoTrack() {
         const currentIndex = mediaElement.videoTracks.selectedIndex;
         const requestedIndex = parseInt(trackControls.videoSelectedIndex.value);
@@ -114,6 +205,54 @@
         }
     }
 
+    // Globals are very much helpful for debugging.
+    let mediaSource;
+    let mseAssetsPaths;
+
+    async function onSourceOpen() {
+        for (let assetPath of mseAssetsPaths) {
+            const codecs = [];
+            if (assetPath.indexOf("audio") != -1)
+                codecs.push("mp4a.40.2");
+            if (assetPath.indexOf("video") != -1)
+                codecs.push("avc1.4d002a");
+
+            const mimeType = `${assetPath.indexOf("video") != -1 ? "video" : "audio"}/mp4; codecs="${codecs.join(",")}"`;
+            mediaSource.addSourceBuffer(mimeType);
+        }
+
+        for (let i = 0; i < mseAssetsPaths.length; i++) {
+            const assetPath = mseAssetsPaths[i];
+            const sourceBuffer = mediaSource.sourceBuffers[i];
+
+            const response = await fetch(assetPath);
+            const arrayBuffer = await response.arrayBuffer();
+            const initSegmentBoundary = findMP4InitializationSegmentBoundary(arrayBuffer);
+            const initSegment = arrayBuffer.slice(0, initSegmentBoundary);
+            const mediaSegment = arrayBuffer.slice(initSegmentBoundary);
+            await waitAppendBuffer(sourceBuffer, initSegment);
+            await waitAppendBuffer(sourceBuffer, mediaSegment);
+        }
+        mediaSource.endOfStream();
+    }
+
+    function waitAppendBuffer(sourceBuffer, buffer) {
+        return new Promise(resolve => {
+            sourceBuffer.addEventListener("updateend", function updateEnd() {
+                sourceBuffer.removeEventListener("updateend", updateEnd);
+                resolve();
+            });
+            sourceBuffer.appendBuffer(buffer);
+        });
+    }
+
+    function makeMediaSource(_mseAssetsPaths) {
+        mseAssetsPaths = _mseAssetsPaths;
+        mediaSource = new MediaSource();
+        mediaSource.addEventListener("sourceopen", onSourceOpen);
+        return URL.createObjectURL(mediaSource);
+    }
+
     topBar.onsubmit = function loadMedia(event) {
         event.preventDefault();
 
@@ -123,7 +262,24 @@
         while (grpVideoTracks.lastChild)
             grpVideoTracks.lastChild.remove();
 
-        mediaElement.src = "assets/" + selMediaFile.value;
+        const mseAssets = parseMSEString(selMediaFile.value);
+        if (!mseAssets) {
+            // Regular playback
+            mediaElement.src = "assets/" + selMediaFile.value;
+        } else {
+            // MSE
+            mediaElement.src = makeMediaSource(mseAssets.map(x => `assets/mse-${x}`));
+        }
+    };
+
+    btnTearDown.onclick = function () {
+        mediaElement.src = "";
+    };
+
+    btnTransplant.onclick = function () {
+        btnTransplant.disabled = true;
+        mediaElement.parentElement.removeChild(mediaElement);
+        document.getElementById("transplant-place").insertBefore(mediaElement, null);
     };
 </script>
 </body>
